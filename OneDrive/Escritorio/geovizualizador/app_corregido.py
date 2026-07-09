@@ -16,13 +16,31 @@ import matplotlib.colors as mcolors
 # Configuración
 # ─────────────────────────────────────────────────────────────
 
-st.set_page_config(page_title="GeoVisualizador de Biodiversidad - Aysén", layout="wide")
-st.title("🌳 GeoVisualizador de Biodiversidad y Áreas Protegidas — Región de Aysén")
-st.write(
-    "Aplicación desarrollada con Streamlit. Explora las áreas silvestres protegidas, "
-    "la red hídrica y el relieve de la Región de Aysén del General Carlos Ibáñez del Campo. "
-    "Selecciona las capas en el panel lateral y usa el Panel de Análisis para explorar estadísticas."
+st.set_page_config(
+    page_title="GeoVisualizador Turístico de Aysén",
+    page_icon="🗺️",
+    layout="wide"
 )
+
+st.markdown("""
+<div style="
+background:linear-gradient(90deg,#1B5E20,#43A047);
+padding:25px;
+border-radius:15px;
+text-align:center;
+color:white;
+margin-bottom:20px;">
+
+<h1 style="margin:0;font-size:42px;">
+🗺️ GeoVisualizador Turístico de la Región de Aysén
+</h1>
+
+<p style="font-size:20px;margin-top:10px;">
+Explora áreas protegidas, atractivos turísticos y el relieve de la región mediante un visor SIG interactivo.
+</p>
+
+</div>
+""", unsafe_allow_html=True)
 
 DATA = Path("data")
 CRS_METRICO = None  # se calcula dinámicamente por capa con estimate_utm_crs()
@@ -37,22 +55,20 @@ def quitar_tildes(texto):
 # PASO 1: Paletas cartográficas
 # ─────────────────────────────────────────────────────────────
 
-# Áreas protegidas: colores inspirados en categorías SNASPE/SNAP
 PALETA_ASP_FIJA = {
-    "parque":      "#1B5E20",
-    "reserva":     "#66BB6A",
-    "monumento":   "#F9A825",
-    "santuario":   "#00838F",
-    "biosfera":    "#6A1B9A",
-    "ramsar":      "#0277BD",
-    "prioritario": "#AD1457",
+    "parque":      "#1A237E",   # índigo/azul marino — contrasta bien con el DEM verde
+    "reserva":     "#F4511E",   # naranjo profundo
+    "monumento":   "#F9A825",   # ámbar/dorado
+    "santuario":   "#00BCD4",   # cian brillante
+    "biosfera":    "#8E24AA",   # púrpura
+    "ramsar":      "#1E88E5",   # azul (coherente con humedales, distinto del índigo de parque)
+    "prioritario": "#D81B60",   # magenta
 }
 PALETA_ASP_RESPALDO = [
-    "#2E7D32", "#558B2F", "#00695C", "#4527A0", "#EF6C00",
-    "#00838F", "#6D4C41", "#C62828", "#5E35B1", "#F9A825",
+    "#5C6BC0", "#FF7043", "#8D6E63", "#EC407A", "#26C6DA",
+    "#FFCA28", "#7E57C2", "#EF5350", "#42A5F5", "#AB47BC",
 ]
 
-# Vialidad / accesos: jerarquía vial estándar
 ESTILOS_TIPO_TRANSPORTE = {
     "autopista":   {"color": "#CC0000", "weight": 6},
     "ruta":        {"color": "#E05000", "weight": 4},
@@ -65,7 +81,6 @@ ESTILOS_TIPO_TRANSPORTE = {
     "default":     {"color": "#888888", "weight": 2},
 }
 
-# Hidrografía
 ESTILOS_TIPO_HIDRO = {
     "rio":      {"color": "#1565C0", "weight": 3.5},
     "estero":   {"color": "#1E88E5", "weight": 2.0},
@@ -77,7 +92,6 @@ ESTILOS_TIPO_HIDRO = {
     "default":  {"color": "#2196F3", "weight": 1.5},
 }
 
-# Atractivos turísticos: categorías SERNATUR
 PALETA_ATRACTIVOS_FIJA = {
     "sitios naturales":            "#2E7D32",
     "museos manifestaciones":      "#6A1B9A",
@@ -88,28 +102,45 @@ PALETA_ATRACTIVOS_FIJA = {
 }
 PALETA_ATRACTIVOS_RESPALDO = ["#455A64", "#00838F", "#795548", "#C62828"]
 
-# DEM: colormap hipsométrico (costa -> cordillera, coherente con Los Ríos)
+# Los nombres oficiales SERNATUR son muy largos para una leyenda de mapa
+# (ej. "Realizaciones Técnicas y Científicas Contemporáneas y Culturales
+# Históricas"), así que se muestran acortados sin perder el sentido.
+ABREVIACIONES_ETIQUETAS = {
+    "sitios naturales":            "Sitios naturales",
+    "museos manifestaciones":      "Museos y sitios históricos",
+    "folklore":                    "Folklore",
+    "realizaciones tecnicas":      "Realizaciones técnicas/científicas",
+    "rutas y circuitos":           "Rutas y circuitos turísticos",
+    "acontecimientos programados": "Acontecimientos programados",
+}
+
+
+def formatear_etiqueta(etiqueta):
+    if etiqueta == "None":
+        return "Sin categoría (dato faltante)"
+    et_low = quitar_tildes(str(etiqueta).lower())
+    for key, bonito in ABREVIACIONES_ETIQUETAS.items():
+        if key in et_low:
+            return bonito
+    # Si no hay abreviación conocida, se muestra en formato Título en vez de MAYÚSCULAS
+    return str(etiqueta).strip().title()
+
 COLORMAP_DEM = [
-    (0.00, "#08306B"),   # azul profundo (nivel del mar / cuerpos de agua)
-    (0.05, "#1B5E20"),   # verde oscuro - tierras bajas / bosque
+    (0.00, "#08306B"),
+    (0.05, "#1B5E20"),
     (0.20, "#4CAF50"),
     (0.40, "#AED581"),
     (0.60, "#DAA520"),
     (0.75, "#8B4513"),
     (0.90, "#D2B48C"),
-    (1.00, "#FFFAFA"),   # blanco - cumbres andinas
+    (1.00, "#FFFAFA"),
 ]
 
 # ─────────────────────────────────────────────────────────────
 # PASO 2: Funciones de color dinámico y estilos
 # ─────────────────────────────────────────────────────────────
 
-def construir_mapa_colores(serie, paleta_fija=None, paleta_respaldo=None):
-    """
-    Asigna color a cada valor único de una serie.
-    Usa primero coincidencias en paleta_fija (por palabra clave, case-insensitive),
-    y para el resto reparte colores de paleta_respaldo.
-    """
+def construir_mapa_colores(serie, paleta_fija=None, paleta_respaldo=None, color_nulo="#9E9E9E"):
     paleta_fija = paleta_fija or {}
     paleta_respaldo = paleta_respaldo or ["#888888"]
     valores = sorted(serie.dropna().unique().tolist())
@@ -125,16 +156,17 @@ def construir_mapa_colores(serie, paleta_fija=None, paleta_respaldo=None):
         if color_asignado is None:
             color_asignado = paleta_respaldo[i % len(paleta_respaldo)]
             i += 1
-        color_map[str(v)] = color_asignado
+        color_map[str(v).strip()] = color_asignado
+
     return color_map
 
 
-def crear_style_categorico(color_map, col, fill=True, weight=0.8):
+def crear_style_categorico(color_map, col, fill=True, weight=1.8):
     def style_fn(feature):
-        val = str(feature["properties"].get(col, ""))
+        val = str(feature["properties"].get(col, "")).strip()
         color = color_map.get(val, "#AAAAAA")
         if fill:
-            return {"fillColor": color, "color": "#333333", "weight": weight, "fillOpacity": 0.65}
+            return {"fillColor": color, "color": "#ffffff", "weight": weight, "fillOpacity": 0.8}
         else:
             return {"color": color, "weight": 3, "opacity": 0.9}
     return style_fn
@@ -152,63 +184,95 @@ def crear_style_por_diccionario(col, estilos_dict):
 
 
 # ─────────────────────────────────────────────────────────────
-# PASO 3: Leyendas HTML
+# PASO 3: Leyendas HTML (versión "sección" — sin posicionamiento propio)
 # ─────────────────────────────────────────────────────────────
+# En vez de que cada leyenda flote sola con position:fixed (lo que hacía que
+# se encimaran y se cortaran fuera del mapa), cada función ahora devuelve
+# sólo el bloque de contenido. Todas las secciones se juntan al final en
+# UN único panel fijo, con scroll, en la esquina superior derecha.
 
-def leyenda_categorica_html(titulo, color_map, icono="🔲", posicion_top="10px", posicion_right="10px"):
+def _simbolo_pin(color, size=14):
+    """Pin/marcador tipo 'gota' — para puntos como Atractivos Turísticos."""
+    return f"""<svg width="{size}" height="{size + 5}" viewBox="0 0 24 32"
+         style="flex-shrink:0;margin-right:7px;margin-top:1px;">
+      <path d="M12 0C5.4 0 0 5.4 0 12c0 9 12 20 12 20s12-11 12-20c0-6.6-5.4-12-12-12z"
+            fill="{color}" stroke="#ffffff" stroke-width="1.3"/>
+      <circle cx="12" cy="12" r="4.3" fill="#ffffff"/>
+    </svg>"""
+
+
+def _simbolo_area(color, size=15):
+    """Polígono irregular — representa una zona/área (ideal para SNASPE / áreas protegidas)."""
+    return f"""<svg width="{size}" height="{size}" viewBox="0 0 24 24"
+         style="flex-shrink:0;margin-right:7px;margin-top:1px;">
+      <polygon points="4,9 10,3 18,5 21,13 15,21 6,19 2,14"
+               fill="{color}" stroke="#ffffff" stroke-width="1.3" stroke-linejoin="round"/>
+    </svg>"""
+
+
+def _simbolo_linea(color, size=15):
+    """Trazo — representa una capa de líneas (ríos, caminos)."""
+    return f"""<svg width="{size}" height="{size}" viewBox="0 0 24 24"
+         style="flex-shrink:0;margin-right:7px;margin-top:6px;">
+      <path d="M2 18 L9 8 L15 14 L22 4" fill="none"
+            stroke="{color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>"""
+
+
+def _simbolo_cuadrado(color, size=14):
+    return f"""<div style="background:{color};width:{size}px;height:{size}px;
+                border:1px solid rgba(255,255,255,0.6);margin-right:7px;margin-top:2px;
+                border-radius:2px;flex-shrink:0;"></div>"""
+
+
+def seccion_leyenda_categorica(titulo, color_map, icono="🔲", forma="cuadrado"):
+    """forma: 'cuadrado' (default), 'pin' (marcador de punto), 'area' (polígono de zona),
+    o 'linea' (trazo, para capas lineales)."""
+    constructores = {
+        "cuadrado": _simbolo_cuadrado,
+        "pin": _simbolo_pin,
+        "area": _simbolo_area,
+        "linea": _simbolo_linea,
+    }
+    construir_simbolo = constructores.get(forma, _simbolo_cuadrado)
+
     items = ""
     for etiqueta, color in sorted(color_map.items()):
+        simbolo = construir_simbolo(color)
+        etiqueta_mostrar = formatear_etiqueta(etiqueta)
         items += f"""
-        <div style="display:flex;align-items:center;margin:3px 0;">
-          <div style="background:{color};width:16px;height:16px;
-                      border:1px solid #555;margin-right:7px;
-                      border-radius:2px;flex-shrink:0;"></div>
-          <span style="font-size:11px;color:#222;">{etiqueta}</span>
+        <div style="display:flex;align-items:flex-start;margin:4px 0;">
+          {simbolo}
+          <span style="font-size:11px;color:#e8e8e8;line-height:1.35;
+                       flex:1;min-width:0;overflow-wrap:break-word;
+                       white-space:normal;">{etiqueta_mostrar}</span>
         </div>"""
     return f"""
-    <div style="
-        position: fixed;
-        top:   {posicion_top};
-        right: {posicion_right};
-        z-index: 1000;
-        background: rgba(255,255,255,0.93);
-        padding: 10px 14px;
-        border-radius: 8px;
-        border: 1px solid #bbb;
-        box-shadow: 2px 2px 6px rgba(0,0,0,0.25);
-        max-height: 280px;
-        overflow-y: auto;
-        min-width: 170px;
-        font-family: Arial, sans-serif;">
-      <b style="font-size:12px;">{icono} {titulo}</b>
-      <hr style="margin:5px 0;border-color:#ddd;">
+    <div style="margin-bottom:12px;">
+      <div style="font-size:12px;font-weight:600;color:#ffffff;
+                  display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+        <span>{icono}</span><span>{titulo}</span>
+      </div>
+      <div style="height:1px;background:rgba(255,255,255,0.18);margin-bottom:7px;"></div>
       {items}
     </div>"""
 
 
-def leyenda_dem_html(dem_min, dem_max, posicion_top="10px", posicion_right="10px"):
+def seccion_leyenda_dem(dem_min, dem_max):
     stops = ", ".join([f"{color} {int(pct*100)}%" for pct, color in COLORMAP_DEM])
     gradient = f"linear-gradient(to top, {stops})"
     return f"""
-    <div style="
-        position: fixed;
-        top:   {posicion_top};
-        right: {posicion_right};
-        z-index: 1000;
-        background: rgba(255,255,255,0.93);
-        padding: 10px 14px;
-        border-radius: 8px;
-        border: 1px solid #bbb;
-        box-shadow: 2px 2px 6px rgba(0,0,0,0.25);
-        min-width: 130px;
-        font-family: Arial, sans-serif;">
-      <b style="font-size:12px;">🏔️ Elevación (m)</b>
-      <hr style="margin:5px 0;border-color:#ddd;">
+    <div style="margin-bottom:12px;">
+      <div style="font-size:12px;font-weight:600;color:#ffffff;
+                  display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+        <span>🏔️</span><span>Elevación (m)</span>
+      </div>
+      <div style="height:1px;background:rgba(255,255,255,0.18);margin-bottom:7px;"></div>
       <div style="display:flex;align-items:stretch;gap:8px;">
-        <div style="width:22px;height:150px;background:{gradient};
-                    border:1px solid #888;border-radius:3px;flex-shrink:0;"></div>
+        <div style="width:20px;height:130px;background:{gradient};
+                    border:1px solid rgba(255,255,255,0.35);border-radius:3px;flex-shrink:0;"></div>
         <div style="display:flex;flex-direction:column;
-                    justify-content:space-between;font-size:11px;color:#333;">
+                    justify-content:space-between;font-size:11px;color:#e8e8e8;">
           <span><b>{int(dem_max)} m</b></span>
           <span>{int(dem_min + (dem_max - dem_min) * 0.75)} m</span>
           <span>{int(dem_min + (dem_max - dem_min) * 0.50)} m</span>
@@ -217,6 +281,126 @@ def leyenda_dem_html(dem_min, dem_max, posicion_top="10px", posicion_right="10px
         </div>
       </div>
     </div>"""
+
+
+def panel_leyendas_html(secciones):
+    """Junta todas las secciones en un único panel, con scroll interno,
+    que se puede colapsar (botón ▾/▸) y arrastrar tomando el header."""
+    if not secciones:
+        return ""
+    contenido = "".join(secciones)
+    return f"""
+    <div id="panel-leyenda" style="
+        position: fixed;
+        top: 75px;
+        right: 10px;
+        z-index: 999;
+        background: rgba(24,26,30,0.94);
+        backdrop-filter: blur(3px);
+        padding: 0;
+        border-radius: 12px;
+        border: 1px solid rgba(255,255,255,0.12);
+        box-shadow: 0 4px 16px rgba(0,0,0,0.45);
+        max-height: 65vh;
+        width: 240px;
+        box-sizing: border-box;
+        font-family: 'Segoe UI', Arial, sans-serif;
+        color: #e8e8e8;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;">
+      <div id="panel-leyenda-header" style="
+          padding: 10px 10px 10px 16px;
+          background: linear-gradient(90deg,#1B5E20,#2E7D32);
+          font-size: 13px;
+          font-weight: 700;
+          color: #ffffff;
+          letter-spacing: 0.3px;
+          flex-shrink: 0;
+          cursor: grab;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          user-select: none;">
+        <span>🗺️ Leyenda</span>
+        <span id="panel-leyenda-toggle" title="Mostrar/ocultar" style="
+            cursor: pointer;
+            padding: 2px 9px;
+            border-radius: 6px;
+            font-size: 14px;
+            line-height: 1.4;
+            background: rgba(255,255,255,0.15);">▾</span>
+      </div>
+      <div id="panel-leyenda-contenido" style="padding: 12px 16px; overflow-y: auto;">
+        {contenido}
+      </div>
+    </div>
+    <script>
+    (function() {{
+      var panel = document.getElementById('panel-leyenda');
+      var header = document.getElementById('panel-leyenda-header');
+      var toggle = document.getElementById('panel-leyenda-toggle');
+      var contenido = document.getElementById('panel-leyenda-contenido');
+      var colapsado = false;
+
+      toggle.addEventListener('click', function(e) {{
+        e.stopPropagation();
+        colapsado = !colapsado;
+        contenido.style.display = colapsado ? 'none' : 'block';
+        toggle.textContent = colapsado ? '\\u25b8' : '\\u25be';
+      }});
+
+      var arrastrando = false, offsetX = 0, offsetY = 0;
+
+      function iniciarArrastre(x, y) {{
+        var rect = panel.getBoundingClientRect();
+        offsetX = x - rect.left;
+        offsetY = y - rect.top;
+        panel.style.right = 'auto';
+        panel.style.left = rect.left + 'px';
+        panel.style.top = rect.top + 'px';
+        arrastrando = true;
+      }}
+
+      function moverA(x, y) {{
+        var maxLeft = window.innerWidth - panel.offsetWidth - 5;
+        var maxTop = window.innerHeight - 40;
+        var nuevoLeft = Math.max(5, Math.min(x - offsetX, maxLeft));
+        var nuevoTop = Math.max(5, Math.min(y - offsetY, maxTop));
+        panel.style.left = nuevoLeft + 'px';
+        panel.style.top = nuevoTop + 'px';
+      }}
+
+      header.addEventListener('mousedown', function(e) {{
+        if (e.target === toggle) return;
+        iniciarArrastre(e.clientX, e.clientY);
+        header.style.cursor = 'grabbing';
+        e.preventDefault();
+      }});
+      document.addEventListener('mousemove', function(e) {{
+        if (arrastrando) moverA(e.clientX, e.clientY);
+      }});
+      document.addEventListener('mouseup', function() {{
+        arrastrando = false;
+        header.style.cursor = 'grab';
+      }});
+
+      header.addEventListener('touchstart', function(e) {{
+        if (e.target === toggle) return;
+        var t = e.touches[0];
+        iniciarArrastre(t.clientX, t.clientY);
+      }}, {{passive: true}});
+      document.addEventListener('touchmove', function(e) {{
+        if (!arrastrando) return;
+        var t = e.touches[0];
+        moverA(t.clientX, t.clientY);
+      }}, {{passive: true}});
+      document.addEventListener('touchend', function() {{
+        arrastrando = false;
+      }});
+    }})();
+    </script>
+    """
 
 # ─────────────────────────────────────────────────────────────
 # PASO 4: Raster → ImageOverlay con colormap DEM
@@ -324,7 +508,6 @@ if not capas and not rasters:
     )
 
 def detectar_columna(gdf, candidatos):
-    """Busca la primera columna existente entre una lista de nombres candidatos (case-insensitive)."""
     cols_low = {c.lower(): c for c in gdf.columns}
     for cand in candidatos:
         if cand.lower() in cols_low:
@@ -332,7 +515,6 @@ def detectar_columna(gdf, candidatos):
     return None
 
 def columnas_categoricas(gdf, max_categorias=25):
-    """Columnas de tipo texto/objeto con un número razonable de categorías, útiles para filtrar/graficar."""
     out = []
     for c in gdf.columns:
         if c == gdf.geometry.name:
@@ -377,7 +559,6 @@ if capas_vectoriales_activas:
     )
     gdf_sel = capas[capa_analisis]
 
-    # ── Estadísticas descriptivas ──
     with st.sidebar.expander("📊 Estadísticas", expanded=True):
         geom_type = gdf_sel.geom_type.iloc[0] if len(gdf_sel) > 0 else ""
         st.write(f"**N° de elementos:** {len(gdf_sel)}")
@@ -403,7 +584,6 @@ if capas_vectoriales_activas:
                 c2.metric("Máximo", f"{serie.max():,.1f}")
                 st.write(f"**Promedio:** {serie.mean():,.1f}")
 
-    # ── Filtro interactivo ──
     cat_cols = columnas_categoricas(gdf_sel)
     if cat_cols:
         with st.sidebar.expander("🎚️ Filtro interactivo"):
@@ -416,7 +596,6 @@ if capas_vectoriales_activas:
             else:
                 col_filtro = None
 
-    # ── Gráfico estadístico ──
     if cat_cols:
         with st.sidebar.expander("📈 Gráfico"):
             col_grafico = st.selectbox("Variable a graficar", cat_cols, key="col_grafico")
@@ -453,8 +632,7 @@ folium.TileLayer(
     name="Satélite",
 ).add_to(m)
 
-leyendas_html = []
-offset_top = 10
+secciones_leyenda = []  # se acumulan aquí y se renderizan en UN solo panel al final
 
 # ─────────────────────────────────────────────────────────────
 # PASO 5: Agregar rasters
@@ -475,10 +653,7 @@ for nombre in rasters_activos:
         ).add_to(m)
 
         if es_dem and dem_min is not None:
-            leyendas_html.append(
-                leyenda_dem_html(dem_min, dem_max, posicion_top=f"{offset_top}px", posicion_right="10px")
-            )
-            offset_top += 220
+            secciones_leyenda.append(seccion_leyenda_dem(dem_min, dem_max))
     except Exception as e:
         st.warning(f"No fue posible cargar raster '{nombre}': {e}")
 
@@ -486,11 +661,18 @@ for nombre in rasters_activos:
 # PASO 6: Agregar vectores con estilos, filtro y leyendas
 # ─────────────────────────────────────────────────────────────
 
-for nombre in capas_activas:
+def _es_geom_puntual(nombre):
+    gdf_tmp = capas[nombre]
+    return len(gdf_tmp) > 0 and gdf_tmp.geom_type.iloc[0] == "Point"
+
+# Los polígonos y líneas se dibujan primero; las capas de puntos (atractivos,
+# sitios, etc.) se dibujan al final para que Leaflet las apile por encima.
+orden_capas = sorted(capas_activas, key=_es_geom_puntual)
+
+for nombre in orden_capas:
     gdf = capas[nombre]
     nombre_low = nombre.lower()
 
-    # Aplicar filtro interactivo si corresponde a la capa en análisis
     if nombre == capa_analisis and col_filtro and valores_filtro is not None:
         gdf = gdf[gdf[col_filtro].isin(valores_filtro)]
 
@@ -527,23 +709,29 @@ for nombre in capas_activas:
         col = col_snasp
 
         if col:
-            color_map = construir_mapa_colores(gdf[col], PALETA_ASP_FIJA, PALETA_ASP_RESPALDO)
+            n_sin_dato = gdf[col].isna().sum()
+            gdf_valido = gdf[gdf[col].notna()]
+
+            color_map = construir_mapa_colores(gdf_valido[col], PALETA_ASP_FIJA, PALETA_ASP_RESPALDO)
             style_fn = crear_style_categorico(color_map, col, fill=True)
-            campos_tt = [c for c in [col, "Nombre", "NOMBRE", "Superficie", "SUPERFICIE"] if c in gdf.columns]
-            tooltip = folium.GeoJsonTooltip(fields=campos_tt) if campos_tt else folium.GeoJsonTooltip(fields=list(gdf.columns[:-1]))
+            campos_tt = [c for c in [col, "Nombre", "NOMBRE", "Superficie", "SUPERFICIE"] if c in gdf_valido.columns]
+            tooltip = folium.GeoJsonTooltip(fields=campos_tt) if campos_tt else folium.GeoJsonTooltip(fields=list(gdf_valido.columns[:-1]))
+
+            if n_sin_dato > 0:
+                st.sidebar.caption(
+                    f"⚠️ {nombre}: {n_sin_dato} polígono(s) sin categoría ('{col}' vacío) no se muestran en el mapa."
+                )
         else:
+            gdf_valido = gdf
             color_map = {}
             style_fn = None
             tooltip = folium.GeoJsonTooltip(fields=list(gdf.columns[:-1]))
 
-        folium.GeoJson(gdf, name=f"🌳 {nombre}", style_function=style_fn, tooltip=tooltip).add_to(m)
+        if len(gdf_valido) > 0:
+            folium.GeoJson(gdf_valido, name=f"🌳 {nombre}", style_function=style_fn, tooltip=tooltip).add_to(m)
 
         if color_map:
-            leyendas_html.append(
-                leyenda_categorica_html("Áreas Protegidas", color_map, icono="🌳",
-                                         posicion_top=f"{offset_top}px", posicion_right="10px")
-            )
-            offset_top += min(60 + len(color_map) * 23, 300) + 10
+            secciones_leyenda.append(seccion_leyenda_categorica("Áreas Protegidas", color_map, icono="🌳", forma="area"))
 
     # ── Hidrografía ─────────────────────────────────────────────
     elif es_hidro:
@@ -561,8 +749,6 @@ for nombre in capas_activas:
             tooltip=folium.GeoJsonTooltip(fields=cols_disp) if cols_disp else None,
         ).add_to(m)
 
-        color_map_hidro = {}
-        # Leyenda simple para hidrografía a partir de los tipos presentes
         if col_tipo:
             tipos_presentes = sorted(gdf[col_tipo].dropna().unique().tolist())
             leyenda_hidro = {}
@@ -574,11 +760,7 @@ for nombre in capas_activas:
                         color = vals["color"]
                         break
                 leyenda_hidro[str(t)] = color
-            leyendas_html.append(
-                leyenda_categorica_html("Red Hídrica", leyenda_hidro, icono="💧",
-                                         posicion_top=f"{offset_top}px", posicion_right="10px")
-            )
-            offset_top += min(60 + len(leyenda_hidro) * 23, 300) + 10
+            secciones_leyenda.append(seccion_leyenda_categorica("Red Hídrica", leyenda_hidro, icono="💧", forma="linea"))
 
     # ── Vialidad / Accesos ──────────────────────────────────────
     elif es_vial:
@@ -608,10 +790,10 @@ for nombre in capas_activas:
         color_map = construir_mapa_colores(gdf[col_cat], PALETA_ATRACTIVOS_FIJA, PALETA_ATRACTIVOS_RESPALDO)
 
         def estilo_atractivo(feature, color_map=color_map, col_cat=col_cat):
-            val = str(feature["properties"].get(col_cat, ""))
+            val = str(feature["properties"].get(col_cat, "")).strip()
             color = color_map.get(val, "#616161")
-            return {"fillColor": color, "color": "#333333", "weight": 1,
-                    "radius": 6, "fillOpacity": 0.85}
+            return {"fillColor": color, "color": "#ffffff", "weight": 2,
+                    "radius": 7, "fillOpacity": 0.95}
 
         campos_tt = [c for c in ["NOMBRE", "Nombre", "CATEGORIA", "TIPO", "COMUNA", "JERARQUIA"]
                      if c in gdf.columns]
@@ -623,11 +805,7 @@ for nombre in capas_activas:
             tooltip=folium.GeoJsonTooltip(fields=campos_tt) if campos_tt else None,
         ).add_to(m)
 
-        leyendas_html.append(
-            leyenda_categorica_html("Atractivos Turísticos", color_map, icono="📍",
-                                     posicion_top=f"{offset_top}px", posicion_right="10px")
-        )
-        offset_top += min(60 + len(color_map) * 23, 300) + 10
+        secciones_leyenda.append(seccion_leyenda_categorica("Atractivos Turísticos", color_map, icono="📍", forma="pin"))
 
     # ── Capas de puntos genéricas (ej. sitios Ramsar, centros poblados) ─
     elif geom_base == "Point":
@@ -635,8 +813,8 @@ for nombre in capas_activas:
         folium.GeoJson(
             gdf,
             name=f"📍 {nombre}",
-            marker=folium.CircleMarker(radius=6, fill=True, fill_opacity=0.85,
-                                        color="#AD1457", fill_color="#EC407A", weight=1.5),
+            marker=folium.CircleMarker(radius=7, fill=True, fill_opacity=0.95,
+                                        color="#ffffff", fill_color="#EC407A", weight=2),
             tooltip=folium.GeoJsonTooltip(fields=campos_tt) if campos_tt else None,
         ).add_to(m)
 
@@ -648,15 +826,21 @@ for nombre in capas_activas:
         ).add_to(m)
 
 # ─────────────────────────────────────────────────────────────
-# PASO 7: Leyendas + control de capas + render
+# PASO 7: Leyenda (panel único), control de capas y render
 # ─────────────────────────────────────────────────────────────
 
-for html in leyendas_html:
-    m.get_root().html.add_child(folium.Element(html))
+# Panel único de leyendas: nunca se encima ni se corta, tiene scroll propio.
+panel_html = panel_leyendas_html(secciones_leyenda)
+if panel_html:
+    m.get_root().html.add_child(folium.Element(panel_html))
 
-folium.LayerControl(collapsed=False).add_to(m)
+# El control de capas se mueve a bottomleft y colapsado para no chocar
+# con el panel de leyendas (que ahora ocupa el topright).
+folium.LayerControl(collapsed=True, position="bottomleft").add_to(m)
 
-st_folium(m, width=1200, height=700)
+# Mapa responsive: se adapta al ancho del contenedor en vez de un
+# tamaño fijo en píxeles (eso era lo que provocaba el corte a la derecha).
+st_folium(m, use_container_width=True, height=700, returned_objects=[])
 
 # ─────────────────────────────────────────────────────────────
 # Info sidebar
@@ -666,3 +850,4 @@ st.sidebar.markdown("---")
 st.sidebar.write(f"Capas vectoriales: **{len(capas)}**")
 st.sidebar.write(f"Rasters: **{len(rasters)}**")
 st.sidebar.write(f"Activas: **{len(capas_activas) + len(rasters_activos)}**")
+   
