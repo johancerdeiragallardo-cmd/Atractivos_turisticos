@@ -284,125 +284,91 @@ def seccion_leyenda_dem(dem_min, dem_max):
 
 
 def panel_leyendas_html(secciones):
-    """Junta todas las secciones en un único panel, con scroll interno,
-    que se puede colapsar (botón ▾/▸) y arrastrar tomando el header."""
+    """Junta todas las secciones en un único panel. Colapsar/expandir usa
+    <details>/<summary> nativo del navegador (sin JavaScript, 100% confiable
+    incluso dentro de iframes de componentes de Streamlit). Reposicionar usa
+    radio buttons ocultos + CSS puro (":checked ~"), también sin JavaScript."""
     if not secciones:
         return ""
     contenido = "".join(secciones)
     return f"""
-    <div id="panel-leyenda" style="
+    <input type="radio" name="panel-pos" id="pos-tr" checked style="display:none;">
+    <input type="radio" name="panel-pos" id="pos-tl" style="display:none;">
+    <input type="radio" name="panel-pos" id="pos-br" style="display:none;">
+    <input type="radio" name="panel-pos" id="pos-bl" style="display:none;">
+
+    <div style="
+        position: fixed;
+        top: 6px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 1000;
+        display: flex;
+        gap: 3px;
+        background: rgba(24,26,30,0.85);
+        padding: 4px;
+        border-radius: 8px;
+        border: 1px solid rgba(255,255,255,0.15);
+        font-family: Arial, sans-serif;">
+      <label for="pos-tl" title="Mover arriba-izquierda" style="cursor:pointer;width:22px;height:22px;
+             display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;
+             border-radius:4px;">↖</label>
+      <label for="pos-tr" title="Mover arriba-derecha" style="cursor:pointer;width:22px;height:22px;
+             display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;
+             border-radius:4px;">↗</label>
+      <label for="pos-bl" title="Mover abajo-izquierda" style="cursor:pointer;width:22px;height:22px;
+             display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;
+             border-radius:4px;">↙</label>
+      <label for="pos-br" title="Mover abajo-derecha" style="cursor:pointer;width:22px;height:22px;
+             display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;
+             border-radius:4px;">↘</label>
+    </div>
+
+    <details id="panel-leyenda" open style="
         position: fixed;
         top: 75px;
         right: 10px;
         z-index: 999;
         background: rgba(24,26,30,0.94);
-        backdrop-filter: blur(3px);
-        padding: 0;
         border-radius: 12px;
         border: 1px solid rgba(255,255,255,0.12);
         box-shadow: 0 4px 16px rgba(0,0,0,0.45);
-        max-height: 65vh;
         width: 240px;
         box-sizing: border-box;
         font-family: 'Segoe UI', Arial, sans-serif;
         color: #e8e8e8;
-        overflow: hidden;
-        display: flex;
-        flex-direction: column;">
-      <div id="panel-leyenda-header" style="
-          padding: 10px 10px 10px 16px;
+        overflow: hidden;">
+      <summary style="
+          list-style: none;
+          padding: 10px 16px;
           background: linear-gradient(90deg,#1B5E20,#2E7D32);
           font-size: 13px;
           font-weight: 700;
           color: #ffffff;
           letter-spacing: 0.3px;
-          flex-shrink: 0;
-          cursor: grab;
+          cursor: pointer;
           display: flex;
           align-items: center;
           justify-content: space-between;
           user-select: none;">
         <span>🗺️ Leyenda</span>
-        <span id="panel-leyenda-toggle" title="Mostrar/ocultar" style="
-            cursor: pointer;
-            padding: 2px 9px;
-            border-radius: 6px;
-            font-size: 14px;
-            line-height: 1.4;
-            background: rgba(255,255,255,0.15);">▾</span>
-      </div>
-      <div id="panel-leyenda-contenido" style="padding: 12px 16px; overflow-y: auto;">
+        <span style="font-size:14px;">▾</span>
+      </summary>
+      <div style="padding: 12px 16px; max-height: 55vh; overflow-y: auto;">
         {contenido}
       </div>
-    </div>
-    <script>
-    (function() {{
-      var panel = document.getElementById('panel-leyenda');
-      var header = document.getElementById('panel-leyenda-header');
-      var toggle = document.getElementById('panel-leyenda-toggle');
-      var contenido = document.getElementById('panel-leyenda-contenido');
-      var colapsado = false;
+    </details>
 
-      toggle.addEventListener('click', function(e) {{
-        e.stopPropagation();
-        colapsado = !colapsado;
-        contenido.style.display = colapsado ? 'none' : 'block';
-        toggle.textContent = colapsado ? '\\u25b8' : '\\u25be';
-      }});
-
-      var arrastrando = false, offsetX = 0, offsetY = 0;
-
-      function iniciarArrastre(x, y) {{
-        var rect = panel.getBoundingClientRect();
-        offsetX = x - rect.left;
-        offsetY = y - rect.top;
-        panel.style.right = 'auto';
-        panel.style.left = rect.left + 'px';
-        panel.style.top = rect.top + 'px';
-        arrastrando = true;
-      }}
-
-      function moverA(x, y) {{
-        var maxLeft = window.innerWidth - panel.offsetWidth - 5;
-        var maxTop = window.innerHeight - 40;
-        var nuevoLeft = Math.max(5, Math.min(x - offsetX, maxLeft));
-        var nuevoTop = Math.max(5, Math.min(y - offsetY, maxTop));
-        panel.style.left = nuevoLeft + 'px';
-        panel.style.top = nuevoTop + 'px';
-      }}
-
-      header.addEventListener('mousedown', function(e) {{
-        if (e.target === toggle) return;
-        iniciarArrastre(e.clientX, e.clientY);
-        header.style.cursor = 'grabbing';
-        e.preventDefault();
-      }});
-      document.addEventListener('mousemove', function(e) {{
-        if (arrastrando) moverA(e.clientX, e.clientY);
-      }});
-      document.addEventListener('mouseup', function() {{
-        arrastrando = false;
-        header.style.cursor = 'grab';
-      }});
-
-      header.addEventListener('touchstart', function(e) {{
-        if (e.target === toggle) return;
-        var t = e.touches[0];
-        iniciarArrastre(t.clientX, t.clientY);
-      }}, {{passive: true}});
-      document.addEventListener('touchmove', function(e) {{
-        if (!arrastrando) return;
-        var t = e.touches[0];
-        moverA(t.clientX, t.clientY);
-      }}, {{passive: true}});
-      document.addEventListener('touchend', function() {{
-        arrastrando = false;
-      }});
-    }})();
-    </script>
+    <style>
+      #panel-leyenda summary::-webkit-details-marker {{ display: none; }}
+      #panel-leyenda summary::marker {{ content: ""; }}
+      #pos-tl:checked ~ #panel-leyenda {{ top: 75px; left: 10px; right: auto; bottom: auto; }}
+      #pos-tr:checked ~ #panel-leyenda {{ top: 75px; right: 10px; left: auto; bottom: auto; }}
+      #pos-bl:checked ~ #panel-leyenda {{ bottom: 10px; left: 10px; top: auto; right: auto; }}
+      #pos-br:checked ~ #panel-leyenda {{ bottom: 10px; right: 10px; top: auto; left: auto; }}
+    </style>
     """
 
-# ─────────────────────────────────────────────────────────────
 # PASO 4: Raster → ImageOverlay con colormap DEM
 # ─────────────────────────────────────────────────────────────
 
@@ -527,6 +493,29 @@ def columnas_categoricas(gdf, max_categorias=25):
 
 def columnas_numericas(gdf):
     return [c for c in gdf.columns if c != gdf.geometry.name and pd.api.types.is_numeric_dtype(gdf[c])]
+
+
+def inferir_categoria_desde_nombre(gdf, col_categoria, col_nombre, paleta_fija):
+    """Cuando el campo de categoría (Tipo_Snasp/Categoria) está vacío, intenta
+    rescatarlo buscando palabras clave (parque, reserva, monumento, etc.) en
+    el nombre del área — muy común que el nombre oficial ya incluya la
+    categoría (ej. 'Parque Nacional Perito Moreno')."""
+    def _inferir(row):
+        val = row.get(col_categoria) if col_categoria else None
+        if pd.notna(val) and str(val).strip():
+            return str(val).strip()
+        if col_nombre:
+            nombre_val = row.get(col_nombre)
+            if pd.notna(nombre_val):
+                nombre_low = quitar_tildes(str(nombre_val).lower())
+                for key in paleta_fija.keys():
+                    if key in nombre_low:
+                        return key.capitalize()
+        return None
+
+    gdf = gdf.copy()
+    gdf["_categoria_snasp"] = gdf.apply(_inferir, axis=1)
+    return gdf
 
 # ─────────────────────────────────────────────────────────────
 # Sidebar: capas
@@ -706,9 +695,16 @@ for nombre in orden_capas:
 
     # ── Áreas Protegidas (SNASPE/SNAP/ASP) ─────────────────────
     if es_protegidas:
-        col = col_snasp
+        col_nombre_asp = detectar_columna(gdf, ["Nombre", "NOMBRE", "nombre"])
 
-        if col:
+        if col_snasp or col_nombre_asp:
+            gdf = inferir_categoria_desde_nombre(gdf, col_snasp, col_nombre_asp, PALETA_ASP_FIJA)
+            col = "_categoria_snasp"
+
+            n_rescatados = 0
+            if col_snasp:
+                n_rescatados = int((gdf[col_snasp].isna() & gdf[col].notna()).sum())
+
             n_sin_dato = gdf[col].isna().sum()
             gdf_valido = gdf[gdf[col].notna()]
 
@@ -717,9 +713,13 @@ for nombre in orden_capas:
             campos_tt = [c for c in [col, "Nombre", "NOMBRE", "Superficie", "SUPERFICIE"] if c in gdf_valido.columns]
             tooltip = folium.GeoJsonTooltip(fields=campos_tt) if campos_tt else folium.GeoJsonTooltip(fields=list(gdf_valido.columns[:-1]))
 
+            if n_rescatados > 0:
+                st.sidebar.caption(
+                    f"✅ {nombre}: {n_rescatados} polígono(s) sin '{col_snasp}' se clasificaron a partir del nombre."
+                )
             if n_sin_dato > 0:
                 st.sidebar.caption(
-                    f"⚠️ {nombre}: {n_sin_dato} polígono(s) sin categoría ('{col}' vacío) no se muestran en el mapa."
+                    f"⚠️ {nombre}: {n_sin_dato} polígono(s) sin categoría ni pista en el nombre no se muestran en el mapa."
                 )
         else:
             gdf_valido = gdf
@@ -850,4 +850,3 @@ st.sidebar.markdown("---")
 st.sidebar.write(f"Capas vectoriales: **{len(capas)}**")
 st.sidebar.write(f"Rasters: **{len(rasters)}**")
 st.sidebar.write(f"Activas: **{len(capas_activas) + len(rasters_activos)}**")
-   
