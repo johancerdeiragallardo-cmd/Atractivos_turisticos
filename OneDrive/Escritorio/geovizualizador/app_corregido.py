@@ -391,6 +391,7 @@ def aplicar_colormap_dem(band, nodata):
     return img_array, dem_min, dem_max
 
 
+@st.cache_data(show_spinner="Procesando raster...")
 def raster_a_overlay(raster_path, es_dem=False):
     with rasterio.open(raster_path) as src:
         if src.crs and src.crs.to_epsg() != 4326:
@@ -452,16 +453,23 @@ def raster_a_overlay(raster_path, es_dem=False):
 
 archivos_vec = list(DATA.glob("*.gpkg")) + list(DATA.glob("*.shp")) + list(DATA.glob("*.geojson"))
 
-capas = {}
-for archivo in archivos_vec:
-    nombre = archivo.stem.replace("_", " ")
-    try:
-        gdf = gpd.read_file(archivo)
-        if gdf.crs is not None:
-            gdf = gdf.to_crs(4326)
-        capas[nombre] = gdf
-    except Exception as e:
-        st.warning(f"No fue posible cargar {archivo.name}: {e}")
+
+@st.cache_data(show_spinner="Cargando capas vectoriales...")
+def cargar_capas_vectoriales(lista_archivos):
+    capas_cargadas = {}
+    for archivo in lista_archivos:
+        nombre = archivo.stem.replace("_", " ")
+        try:
+            gdf = gpd.read_file(archivo)
+            if gdf.crs is not None:
+                gdf = gdf.to_crs(4326)
+            capas_cargadas[nombre] = gdf
+        except Exception as e:
+            st.warning(f"No fue posible cargar {archivo.name}: {e}")
+    return capas_cargadas
+
+
+capas = cargar_capas_vectoriales(archivos_vec)
 
 archivos_raster = list(DATA.glob("*.tif")) + list(DATA.glob("*.tiff")) + list(DATA.glob("*.img"))
 rasters = {archivo.stem.replace("_", " "): archivo for archivo in archivos_raster}
@@ -608,6 +616,7 @@ if capas_vectoriales_activas:
             ax.set_title(f"{capa_analisis}\npor {col_grafico}", fontsize=9)
             plt.tight_layout()
             st.pyplot(fig)
+            plt.close(fig)
 else:
     st.sidebar.caption("Activa al menos una capa vectorial para habilitar el análisis.")
 
