@@ -2,6 +2,7 @@ import streamlit as st
 import geopandas as gpd
 import pandas as pd
 import folium
+from folium.plugins import MiniMap, Fullscreen
 from streamlit_folium import st_folium
 from pathlib import Path
 import numpy as np
@@ -125,6 +126,18 @@ def formatear_etiqueta(etiqueta):
             return bonito
     # Si no hay abreviación conocida, se muestra en formato Título en vez de MAYÚSCULAS
     return str(etiqueta).strip().title()
+
+# Estilo CSS reutilizable para los GeoJsonTooltip — combina con la leyenda oscura.
+TOOLTIP_STYLE = """
+    background-color: rgba(24,26,30,0.95);
+    color: #f0f0f0;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 12px;
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 8px;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.4);
+    padding: 8px 10px;
+"""
 
 COLORMAP_DEM = [
     (0.00, "#08306B"),
@@ -733,7 +746,7 @@ for nombre in orden_capas:
             color_map = construir_mapa_colores(gdf_valido[col], PALETA_ASP_FIJA, PALETA_ASP_RESPALDO)
             style_fn = crear_style_categorico(color_map, col, fill=True)
             campos_tt = [c for c in [col, "Nombre", "NOMBRE", "Superficie", "SUPERFICIE"] if c in gdf_valido.columns]
-            tooltip = folium.GeoJsonTooltip(fields=campos_tt) if campos_tt else folium.GeoJsonTooltip(fields=list(gdf_valido.columns[:-1]))
+            tooltip = folium.GeoJsonTooltip(style=TOOLTIP_STYLE, fields=campos_tt) if campos_tt else folium.GeoJsonTooltip(style=TOOLTIP_STYLE, fields=list(gdf_valido.columns[:-1]))
 
             if n_rescatados > 0:
                 st.sidebar.caption(
@@ -747,7 +760,7 @@ for nombre in orden_capas:
             gdf_valido = gdf
             color_map = {}
             style_fn = None
-            tooltip = folium.GeoJsonTooltip(fields=list(gdf.columns[:-1]))
+            tooltip = folium.GeoJsonTooltip(style=TOOLTIP_STYLE, fields=list(gdf.columns[:-1]))
 
         if len(gdf_valido) > 0:
             folium.GeoJson(gdf_valido, name=f"🌳 {nombre}", style_function=style_fn, tooltip=tooltip).add_to(m)
@@ -768,7 +781,7 @@ for nombre in orden_capas:
 
         folium.GeoJson(
             gdf, name=f"💧 {nombre}", style_function=style_fn,
-            tooltip=folium.GeoJsonTooltip(fields=cols_disp) if cols_disp else None,
+            tooltip=folium.GeoJsonTooltip(style=TOOLTIP_STYLE, fields=cols_disp) if cols_disp else None,
         ).add_to(m)
 
         if col_tipo:
@@ -790,10 +803,10 @@ for nombre in orden_capas:
 
         if col_tipo:
             style_fn = crear_style_por_diccionario(col_tipo, ESTILOS_TIPO_TRANSPORTE)
-            tooltip = folium.GeoJsonTooltip(fields=[col_tipo])
+            tooltip = folium.GeoJsonTooltip(style=TOOLTIP_STYLE, fields=[col_tipo])
         else:
             style_fn = lambda f: {"color": ESTILOS_TIPO_TRANSPORTE["default"]["color"], "weight": 2, "opacity": 0.9}
-            tooltip = folium.GeoJsonTooltip(fields=list(gdf.columns[:-1]))
+            tooltip = folium.GeoJsonTooltip(style=TOOLTIP_STYLE, fields=list(gdf.columns[:-1]))
 
         folium.GeoJson(gdf, name=f"🛣️ {nombre}", style_function=style_fn, tooltip=tooltip).add_to(m)
 
@@ -803,7 +816,7 @@ for nombre in orden_capas:
         folium.GeoJson(
             gdf, name=f"🗺️ {nombre}",
             style_function=lambda f: {"color": "#333333", "weight": 2.5, "fillOpacity": 0, "dashArray": "6,4"},
-            tooltip=folium.GeoJsonTooltip(fields=campos_tt) if campos_tt else None,
+            tooltip=folium.GeoJsonTooltip(style=TOOLTIP_STYLE, fields=campos_tt) if campos_tt else None,
         ).add_to(m)
 
     # ── Atractivos turísticos (categórico por CATEGORIA, SERNATUR) ───────
@@ -824,7 +837,7 @@ for nombre in orden_capas:
             gdf, name=f"📍 {nombre}",
             marker=folium.CircleMarker(radius=6, fill=True),
             style_function=estilo_atractivo,
-            tooltip=folium.GeoJsonTooltip(fields=campos_tt) if campos_tt else None,
+            tooltip=folium.GeoJsonTooltip(style=TOOLTIP_STYLE, fields=campos_tt) if campos_tt else None,
         ).add_to(m)
 
         secciones_leyenda.append(seccion_leyenda_categorica("Atractivos Turísticos", color_map, icono="📍", forma="pin"))
@@ -837,14 +850,14 @@ for nombre in orden_capas:
             name=f"📍 {nombre}",
             marker=folium.CircleMarker(radius=7, fill=True, fill_opacity=0.95,
                                         color="#ffffff", fill_color="#EC407A", weight=2),
-            tooltip=folium.GeoJsonTooltip(fields=campos_tt) if campos_tt else None,
+            tooltip=folium.GeoJsonTooltip(style=TOOLTIP_STYLE, fields=campos_tt) if campos_tt else None,
         ).add_to(m)
 
     # ── Resto ────────────────────────────────────────────────────
     else:
         folium.GeoJson(
             gdf, name=nombre,
-            tooltip=folium.GeoJsonTooltip(fields=list(gdf.columns[:-1])),
+            tooltip=folium.GeoJsonTooltip(style=TOOLTIP_STYLE, fields=list(gdf.columns[:-1])),
         ).add_to(m)
 
 # ─────────────────────────────────────────────────────────────
@@ -859,6 +872,10 @@ if panel_html:
 # El control de capas se mueve a bottomleft y colapsado para no chocar
 # con el panel de leyendas (que ahora ocupa el topright).
 folium.LayerControl(collapsed=True, position="bottomleft").add_to(m)
+
+# Minimapa de referencia (esquina inferior) y modo pantalla completa
+MiniMap(toggle_display=True, position="bottomright", width=130, height=130).add_to(m)
+Fullscreen(position="topleft", title="Pantalla completa", title_cancel="Salir de pantalla completa").add_to(m)
 
 # Mapa responsive: se adapta al ancho del contenedor en vez de un
 # tamaño fijo en píxeles (eso era lo que provocaba el corte a la derecha).
