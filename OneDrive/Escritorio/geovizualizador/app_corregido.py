@@ -154,7 +154,11 @@ COLORMAP_DEM = [
 # PASO 2: Funciones de color dinámico y estilos
 # ─────────────────────────────────────────────────────────────
 
-def construir_mapa_colores(serie, paleta_fija=None, paleta_respaldo=None, color_nulo="#9E9E9E"):
+def construir_mapa_colores(serie, paleta_fija=None, paleta_respaldo=None, etiquetas_bonitas=None):
+    """Si se pasa etiquetas_bonitas, los valores que calcen por palabra clave
+    con paleta_fija se agrupan bajo una etiqueta canónica (ej. 'Reserva' y
+    'Reservas' quedan como una sola categoría 'Reserva'), evitando entradas
+    duplicadas en la leyenda cuando se combinan capas con distinta redacción."""
     paleta_fija = paleta_fija or {}
     paleta_respaldo = paleta_respaldo or ["#888888"]
     valores = sorted(serie.dropna().unique().tolist())
@@ -163,22 +167,38 @@ def construir_mapa_colores(serie, paleta_fija=None, paleta_respaldo=None, color_
     for v in valores:
         v_low = quitar_tildes(str(v).lower())
         color_asignado = None
+        etiqueta = str(v).strip()
         for key, color in paleta_fija.items():
             if key in v_low:
                 color_asignado = color
+                if etiquetas_bonitas:
+                    etiqueta = etiquetas_bonitas.get(key, key.title())
                 break
         if color_asignado is None:
-            color_asignado = paleta_respaldo[i % len(paleta_respaldo)]
-            i += 1
-        color_map[str(v).strip()] = color_asignado
+            if etiqueta in color_map:
+                color_asignado = color_map[etiqueta]
+            else:
+                color_asignado = paleta_respaldo[i % len(paleta_respaldo)]
+                i += 1
+        color_map[etiqueta] = color_asignado
 
     return color_map
 
 
-def crear_style_categorico(color_map, col, fill=True, weight=1.8):
+def crear_style_categorico(color_map, col, paleta_fija=None, etiquetas_bonitas=None, fill=True, weight=1.8):
+    paleta_fija = paleta_fija or {}
+
     def style_fn(feature):
         val = str(feature["properties"].get(col, "")).strip()
-        color = color_map.get(val, "#AAAAAA")
+        v_low = quitar_tildes(val.lower())
+        color = None
+        for key in paleta_fija:
+            if key in v_low:
+                etiqueta = etiquetas_bonitas.get(key, key.title()) if etiquetas_bonitas else val
+                color = color_map.get(etiqueta)
+                break
+        if color is None:
+            color = color_map.get(val, "#AAAAAA")
         if fill:
             return {"fillColor": color, "color": "#ffffff", "weight": weight, "fillOpacity": 0.8}
         else:
@@ -656,7 +676,17 @@ folium.TileLayer(
     name="Satélite",
 ).add_to(m)
 
-secciones_leyenda = []  # se acumulan aquí y se renderizan en UN solo panel al final
+secciones_leyenda = []  # DEM u otras secciones que no se combinan
+leyendas_combinadas = {}  # título -> {"icono":..., "forma":..., "colores": {...}}
+
+
+def agregar_a_leyenda_combinada(titulo, color_map, icono, forma):
+    """Si ya existe una sección de leyenda con el mismo título (ej. otra capa
+    de Áreas Protegidas), fusiona los colores en una sola sección en vez de
+    crear una nueva leyenda duplicada."""
+    if titulo not in leyendas_combinadas:
+        leyendas_combinadas[titulo] = {"icono": icono, "forma": forma, "colores": {}}
+    leyendas_combinadas[titulo]["colores"].update(color_map)
 
 # ─────────────────────────────────────────────────────────────
 # PASO 5: Agregar rasters
@@ -743,8 +773,8 @@ for nombre in orden_capas:
             n_sin_dato = gdf[col].isna().sum()
             gdf_valido = gdf[gdf[col].notna()]
 
-            color_map = construir_mapa_colores(gdf_valido[col], PALETA_ASP_FIJA, PALETA_ASP_RESPALDO)
-            style_fn = crear_style_categorico(color_map, col, fill=True)
+            color_map = construir_mapa_colores(gdf_valido[col], PALETA_ASP_FIJA, PALETA_ASP_RESPALDO, etiquetas_bonitas=ETIQUETAS_BONITAS_ASP)
+            style_fn = crear_style_categorico(color_map, col, paleta_fija=PALETA_ASP_FIJA, etiquetas_bonitas=ETIQUETAS_BONITAS_ASP, fill=True)
             campos_tt = [c for c in [col, "Nombre", "NOMBRE", "Superficie", "SUPERFICIE"] if c in gdf_valido.columns]
             tooltip = folium.GeoJsonTooltip(style=TOOLTIP_STYLE, fields=campos_tt) if campos_tt else folium.GeoJsonTooltip(style=TOOLTIP_STYLE, fields=list(gdf_valido.columns[:-1]))
 
@@ -766,7 +796,7 @@ for nombre in orden_capas:
             folium.GeoJson(gdf_valido, name=f"🌳 {nombre}", style_function=style_fn, tooltip=tooltip).add_to(m)
 
         if color_map:
-            secciones_leyenda.append(seccion_leyenda_categorica("Áreas Protegidas", color_map, icono="🌳", forma="area"))
+            agregar_a_leyenda_combinada("Áreas Protegidas", color_map, icono="🌳", forma="area")
 
     # ── Hidrografía ─────────────────────────────────────────────
     elif es_hidro:
@@ -795,7 +825,7 @@ for nombre in orden_capas:
                         color = vals["color"]
                         break
                 leyenda_hidro[str(t)] = color
-            secciones_leyenda.append(seccion_leyenda_categorica("Red Hídrica", leyenda_hidro, icono="💧", forma="linea"))
+            agregar_a_leyenda_combinada("Red Hídrica", leyenda_hidro, icono="💧", forma="linea")
 
     # ── Vialidad / Accesos ──────────────────────────────────────
     elif es_vial:
@@ -840,7 +870,7 @@ for nombre in orden_capas:
             tooltip=folium.GeoJsonTooltip(style=TOOLTIP_STYLE, fields=campos_tt) if campos_tt else None,
         ).add_to(m)
 
-        secciones_leyenda.append(seccion_leyenda_categorica("Atractivos Turísticos", color_map, icono="📍", forma="pin"))
+        agregar_a_leyenda_combinada("Atractivos Turísticos", color_map, icono="📍", forma="pin")
 
     # ── Capas de puntos genéricas (ej. sitios Ramsar, centros poblados) ─
     elif geom_base == "Point":
@@ -859,6 +889,13 @@ for nombre in orden_capas:
             gdf, name=nombre,
             tooltip=folium.GeoJsonTooltip(style=TOOLTIP_STYLE, fields=list(gdf.columns[:-1])),
         ).add_to(m)
+
+# Se arman las secciones combinadas (una por título, sin duplicados) y se
+# agregan a secciones_leyenda junto con la del DEM.
+for _titulo, _datos in leyendas_combinadas.items():
+    secciones_leyenda.append(
+        seccion_leyenda_categorica(_titulo, _datos["colores"], icono=_datos["icono"], forma=_datos["forma"])
+    )
 
 # ─────────────────────────────────────────────────────────────
 # PASO 7: Leyenda (panel único), control de capas y render
