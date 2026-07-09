@@ -56,13 +56,14 @@ def quitar_tildes(texto):
 # ─────────────────────────────────────────────────────────────
 
 PALETA_ASP_FIJA = {
-    "parque":      "#1A237E",   # índigo/azul marino — contrasta bien con el DEM verde
-    "reserva":     "#F4511E",   # naranjo profundo
-    "monumento":   "#F9A825",   # ámbar/dorado
-    "santuario":   "#00BCD4",   # cian brillante
-    "biosfera":    "#8E24AA",   # púrpura
-    "ramsar":      "#1E88E5",   # azul (coherente con humedales, distinto del índigo de parque)
-    "prioritario": "#D81B60",   # magenta
+    "parque":             "#1A237E",   # índigo/azul marino — contrasta bien con el DEM verde
+    "reserva":            "#F4511E",   # naranjo profundo
+    "monumento":          "#F9A825",   # ámbar/dorado
+    "santuario":          "#00BCD4",   # cian brillante
+    "biosfera":           "#8E24AA",   # púrpura
+    "ramsar":             "#1E88E5",   # azul (coherente con humedales)
+    "prioritario":        "#D81B60",   # magenta
+    "bien nacional":      "#FFEB3B",   # amarillo — Bien Nacional Protegido
 }
 PALETA_ASP_RESPALDO = [
     "#5C6BC0", "#FF7043", "#8D6E63", "#EC407A", "#26C6DA",
@@ -495,6 +496,18 @@ def columnas_numericas(gdf):
     return [c for c in gdf.columns if c != gdf.geometry.name and pd.api.types.is_numeric_dtype(gdf[c])]
 
 
+ETIQUETAS_BONITAS_ASP = {
+    "parque":        "Parque",
+    "reserva":       "Reserva",
+    "monumento":     "Monumento",
+    "santuario":     "Santuario",
+    "biosfera":      "Biosfera",
+    "ramsar":        "Ramsar",
+    "prioritario":   "Sitio Prioritario",
+    "bien nacional": "Bien Nacional Protegido",
+}
+
+
 def inferir_categoria_desde_nombre(gdf, col_categoria, col_nombre, paleta_fija):
     """Cuando el campo de categoría (Tipo_Snasp/Categoria) está vacío, intenta
     rescatarlo buscando palabras clave (parque, reserva, monumento, etc.) en
@@ -510,7 +523,7 @@ def inferir_categoria_desde_nombre(gdf, col_categoria, col_nombre, paleta_fija):
                 nombre_low = quitar_tildes(str(nombre_val).lower())
                 for key in paleta_fija.keys():
                     if key in nombre_low:
-                        return key.capitalize()
+                        return ETIQUETAS_BONITAS_ASP.get(key, key.title())
         return None
 
     gdf = gdf.copy()
